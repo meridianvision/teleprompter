@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#C41E3A">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Teleprompter">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>Teleprompter — Meridian Vision</title>
+<style>
+  :root{
+    --accent:#C41E3A;
+    --bg:#f4f5f7;          /* fondo app claro */
+    --panel:#ffffff;       /* barra de controles */
+    --ink:#1a1d21;         /* texto controles */
+    --muted:#6b7280;       /* etiquetas */
+    --line:#e3e6ea;        /* bordes */
+    --read-bg:#ffffff;     /* fondo zona de lectura */
+    --read-ink:#111418;    /* texto de lectura */
+  }
+  /* Tema oscuro SOLO para la zona de lectura (rodaje) */
+  body.dark-read{ --read-bg:#000; --read-ink:#fff; }
+
+  *{ box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
+  html,body{ height:100%; background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; overflow:hidden;
+    -webkit-text-size-adjust:100%; }
+
+  /* Barra de controles clara */
+  #bar{
+    position:fixed; top:0; left:0; right:0; z-index:10;
+    display:flex; flex-wrap:wrap; align-items:center; gap:10px 16px;
+    padding:calc(10px + env(safe-area-inset-top)) 16px 10px;
+    background:var(--panel); border-bottom:1px solid var(--line);
+    box-shadow:0 2px 10px rgba(0,0,0,.06);
+    transition:transform .3s, opacity .3s;
+  }
+  #bar.hidden{ transform:translateY(-100%); opacity:0; }
+  #bar label{ font-size:12px; color:var(--muted); display:flex; flex-direction:column; gap:4px; font-weight:600; }
+  #bar .val{ color:var(--accent); font-weight:700; }
+
+  input[type=range]{ width:150px; height:34px; accent-color:var(--accent); cursor:pointer; }
+  select{
+    font-size:15px; padding:9px 10px; border:1px solid var(--line); border-radius:10px;
+    background:#fff; color:var(--ink); font-weight:600; max-width:230px;
+  }
+  button{
+    background:#fff; color:var(--ink); border:1px solid var(--line); border-radius:12px;
+    padding:12px 18px; font-size:15px; cursor:pointer; font-weight:700; min-height:46px;
+  }
+  button:hover{ background:#f0f1f3; }
+  button:active{ transform:scale(.97); }
+  button.primary{ background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.primary:hover{ filter:brightness(.94); }
+  .toggle.on{ background:var(--accent); border-color:var(--accent); color:#fff; }
+
+  /* Zona de texto editable */
+  #editor{
+    position:absolute; inset:0; top:0; z-index:5;
+    padding:96px 8vw 60px; overflow:auto; outline:none;
+    background:var(--read-bg); color:var(--read-ink);
+    line-height:1.5; font-weight:650; -webkit-user-select:text;
+  }
+  #editor:empty:before{ content:attr(data-ph); color:#9aa0a6; }
+  /* Normaliza texto pegado desde Word o web (color en todo; fondo transparente solo en hijos) */
+  #editor,#editor *,#scroll,#scroll *{ color:var(--read-ink)!important; }
+  #editor *,#scroll *{ background:transparent!important; }
+
+  /* Vista prompter */
+  #stage{ position:absolute; inset:0; overflow:hidden; display:none; background:var(--read-bg); }
+  #scroll{ position:absolute; left:0; right:0; padding:0 8vw; will-change:transform;
+    line-height:1.5; font-weight:650; color:var(--read-ink); }
+  #scroll p{ margin:0 0 .5em; }
+
+  /* Línea guía */
+  #guide{ position:fixed; left:0; right:0; height:0; z-index:6;
+    border-top:3px solid var(--accent); opacity:.5; pointer-events:none; display:none; }
+
+  .mirror-h{ transform:scaleX(-1); }
+  .mirror-v{ transform:scaleY(-1); }
+  .mirror-hv{ transform:scale(-1,-1); }
+
+  #help{ position:fixed; bottom:calc(12px + env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%);
+    z-index:10; font-size:12px; color:var(--muted); background:var(--panel); padding:8px 16px;
+    border:1px solid var(--line); border-radius:20px; transition:opacity .3s; box-shadow:0 2px 8px rgba(0,0,0,.06); }
+  #help.hidden{ opacity:0; }
+
+  /* Teléfono: controles a lo ancho, táctiles */
+  @media (max-width:640px){
+    #bar{ gap:8px 12px; }
+    input[type=range]{ width:100%; }
+    #bar label{ flex:1 1 140px; }
+    button{ flex:1 1 auto; }
+    #help{ display:none; }
+  }
+</style>
+</head>
+<body>
+
+<div id="bar">
+  <button id="playBtn" class="primary">▶ Iniciar</button>
+  <button id="resetBtn">⟲ Reiniciar</button>
+  <button id="editBtn">✎ Editar</button>
+  <button id="pasteBtn">📋 Pegar (WhatsApp/Word)</button>
+  <button id="fileBtn">📄 Abrir archivo</button>
+  <button id="clearBtn">🗑 Limpiar</button>
+  <input type="file" id="fileInput" accept=".txt,.docx,text/plain" hidden>
+
+  <label>Velocidad <span class="val" id="speedVal">60</span> px/s
+    <input type="range" id="speed" min="10" max="300" value="60" step="5">
+  </label>
+  <label>Tamaño <span class="val" id="sizeVal">54</span> px
+    <input type="range" id="size" min="20" max="160" value="54" step="2">
+  </label>
+  <label>Margen <span class="val" id="marginVal">8</span>%
+    <input type="range" id="margin" min="0" max="25" value="8" step="1">
+  </label>
+  <label>Posición
+    <input type="range" id="pos" min="0" max="1000" value="0" step="1">
+  </label>
+
+  <button id="themeBtn" class="toggle">◐ Fondo oscuro</button>
+  <button id="mirrorBtn" class="toggle">⇄ Espejo</button>
+  <button id="guideBtn" class="toggle">― Guía</button>
+</div>
+
+<div id="guide"></div>
+
+<div id="editor" contenteditable="true" data-ph="Escribe aquí, o usa 📋 Pegar (WhatsApp/Word) o 📄 Abrir archivo (.txt / .docx)…"></div>
+
+<div id="stage"><div id="scroll"></div></div>
+
+<div id="help">Espacio: play/pausa · ↑↓: velocidad · ←→: tamaño · R: reiniciar · M: espejo · F: pantalla completa · Esc: editar</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const editor=$('editor'), stage=$('stage'), scroll=$('scroll'),
+      bar=$('bar'), guide=$('guide'), help=$('help');
+
+let playing=false, pos=0, raf=null, lastT=0;
+let speed=60, mirror=0;
+const LS='mv_teleprompter';
+
+editor.innerHTML = localStorage.getItem(LS+'_text') || '';
+function save(){ localStorage.setItem(LS+'_text', editor.innerHTML); }
+editor.addEventListener('input', save);
+
+// --- Importar texto fácil (WhatsApp / Word / archivos) ---
+const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+// Texto plano → párrafos (respeta saltos de línea de WhatsApp)
+function textToHtml(txt){
+  return (txt||'').replace(/\r/g,'').split(/\n+/).map(l=>l.trim()).filter(Boolean)
+    .map(l=>`<p>${esc(l)}</p>`).join('');
+}
+function setText(html){ edit(); editor.innerHTML = html || ''; save(); }
+
+// Botón Pegar: trae de un toque lo copiado en WhatsApp o Word
+$('pasteBtn').onclick = async () => {
+  try{
+    const t = await navigator.clipboard.readText();
+    if(t && t.trim()) setText(textToHtml(t));
+    else alert('No hay texto en el portapapeles. Copia primero en WhatsApp o Word y vuelve a tocar “Pegar”.');
+  }catch(e){
+    edit();
+    alert('Tu navegador pidió permiso o no dejó leer el portapapeles.\nToca dentro del área de texto y mantén pulsado → Pegar.');
+  }
+};
+
+// Botón Limpiar
+$('clearBtn').onclick = () => { if(confirm('¿Borrar todo el texto actual?')) setText(''); };
+
+// Botón Abrir archivo: .txt o .docx de Word
+$('fileBtn').onclick = () => $('fileInput').click();
+$('fileInput').onchange = async e => {
+  const f = e.target.files[0]; if(!f) return;
+  try{
+    const txt = /\.docx$/i.test(f.name) ? await readDocx(await f.arrayBuffer()) : await f.text();
+    setText(textToHtml(txt));
+  }catch(err){
+    alert('No pude leer el archivo. Si es Word, guárdalo como .docx (no .doc), o copia el texto y usa “Pegar”.');
+  }
+  e.target.value='';
+};
+
+// Lector mínimo de .docx (ZIP + XML), sin librerías externas → funciona offline
+async function readDocx(buf){
+  const dv=new DataView(buf), bytes=new Uint8Array(buf), td=new TextDecoder();
+  let eocd=-1;
+  for(let i=bytes.length-22; i>=0 && i>bytes.length-22-65536; i--){
+    if(dv.getUint32(i,true)===0x06054b50){ eocd=i; break; }
+  }
+  if(eocd<0) throw 'no zip';
+  const cdOffset=dv.getUint32(eocd+16,true), cdCount=dv.getUint16(eocd+10,true);
+  let p=cdOffset, target=null;
+  for(let n=0; n<cdCount; n++){
+    if(dv.getUint32(p,true)!==0x02014b50) break;
+    const method=dv.getUint16(p+10,true), compSize=dv.getUint32(p+20,true);
+    const nameLen=dv.getUint16(p+28,true), extraLen=dv.getUint16(p+30,true), commentLen=dv.getUint16(p+32,true);
+    const localOff=dv.getUint32(p+42,true);
+    const name=td.decode(bytes.subarray(p+46,p+46+nameLen));
+    if(name==='word/document.xml'){ target={method,compSize,localOff}; break; }
+    p+=46+nameLen+extraLen+commentLen;
+  }
+  if(!target) throw 'no document.xml';
+  const lo=target.localOff;
+  const dataStart=lo+30+dv.getUint16(lo+26,true)+dv.getUint16(lo+28,true);
+  const comp=bytes.subarray(dataStart, dataStart+target.compSize);
+  let xmlBytes;
+  if(target.method===0){ xmlBytes=comp; }
+  else{
+    const ds=new DecompressionStream('deflate-raw');
+    xmlBytes=new Uint8Array(await new Response(new Blob([comp]).stream().pipeThrough(ds)).arrayBuffer());
+  }
+  return td.decode(xmlBytes)
+    .replace(/<w:tab[^>]*\/>/g,'\t')
+    .replace(/<\/w:p>/g,'\n')
+    .replace(/<[^>]+>/g,'')
+    .replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&apos;/g,"'")
+    .replace(/\n{2,}/g,'\n').trim();
+}
+editor.addEventListener('paste', e=>{
+  e.preventDefault();
+  const txt=(e.clipboardData||window.clipboardData).getData('text/plain');
+  document.execCommand('insertText', false, txt);
+});
+
+function applySize(v){ $('sizeVal').textContent=v; editor.style.fontSize=v+'px'; scroll.style.fontSize=v+'px'; }
+function applyMargin(v){ $('marginVal').textContent=v; editor.style.padding=`96px ${v}vw 60px`; scroll.style.padding=`0 ${v}vw`; }
+function applyMirror(){
+  scroll.className='';
+  if(mirror===1) scroll.classList.add('mirror-h');
+  else if(mirror===2) scroll.classList.add('mirror-v');
+  else if(mirror===3) scroll.classList.add('mirror-hv');
+  $('mirrorBtn').classList.toggle('on', mirror!==0);
+}
+
+$('speed').addEventListener('input',e=>{ speed=+e.target.value; $('speedVal').textContent=speed; });
+$('size').addEventListener('input',e=>applySize(+e.target.value));
+$('margin').addEventListener('input',e=>applyMargin(+e.target.value));
+
+const posSlider=$('pos');
+function startPos(){ return window.innerHeight*0.4; }
+function travel(){ return startPos() + scroll.offsetHeight; }
+function showStage(){
+  scroll.innerHTML = editor.innerHTML || '<p>(vacío)</p>';
+  editor.style.display='none'; stage.style.display='block';
+  scroll.style.transform=''; applyMirror();
+}
+function syncPosSlider(){ posSlider.value = Math.max(0, Math.min(1000, Math.round((startPos()-pos)/travel()*1000))); }
+
+function startPlay(){
+  showStage(); pos=startPos(); scroll.style.top=pos+'px'; posSlider.value=0;
+  playing=true; lastT=0; $('playBtn').textContent='⏸ Pausa';
+  raf=requestAnimationFrame(loop);
+}
+posSlider.addEventListener('input', e=>{
+  if(stage.style.display!=='block') showStage();
+  pause();
+  pos = startPos() - (+e.target.value/1000)*travel();
+  scroll.style.top=pos+'px';
+});
+function pause(){ playing=false; cancelAnimationFrame(raf); $('playBtn').textContent='▶ Reanudar'; }
+function resume(){
+  if(stage.style.display==='none'){ startPlay(); return; }
+  playing=true; lastT=0; $('playBtn').textContent='⏸ Pausa'; raf=requestAnimationFrame(loop);
+}
+function toggle(){ playing ? pause() : resume(); }
+function loop(t){
+  if(!playing) return;
+  if(!lastT) lastT=t;
+  const dt=(t-lastT)/1000; lastT=t;
+  pos -= speed*dt; scroll.style.top=pos+'px'; syncPosSlider();
+  if(pos < -scroll.offsetHeight){ pause(); return; }
+  raf=requestAnimationFrame(loop);
+}
+function reset(){ pause(); pos=startPos(); scroll.style.top=pos+'px'; posSlider.value=0; $('playBtn').textContent='▶ Iniciar'; }
+function edit(){ pause(); stage.style.display='none'; editor.style.display='block'; $('playBtn').textContent='▶ Iniciar'; editor.focus(); }
+
+$('playBtn').onclick=()=>{ if(stage.style.display==='none') startPlay(); else toggle(); };
+$('resetBtn').onclick=reset;
+$('editBtn').onclick=edit;
+$('mirrorBtn').onclick=()=>{ mirror=(mirror+1)%4; applyMirror(); };
+$('guideBtn').onclick=()=>{ const on=guide.style.display!=='block';
+  guide.style.display=on?'block':'none'; guide.style.top='40%'; $('guideBtn').classList.toggle('on',on); };
+
+// Tema de la zona de lectura (claro por defecto / oscuro para rodaje)
+$('themeBtn').onclick=()=>{
+  const dark=document.body.classList.toggle('dark-read');
+  $('themeBtn').classList.toggle('on',dark);
+  $('themeBtn').textContent = dark ? '◑ Fondo claro' : '◐ Fondo oscuro';
+  localStorage.setItem(LS+'_dark', dark?'1':'0');
+};
+if(localStorage.getItem(LS+'_dark')==='1'){ document.body.classList.add('dark-read');
+  $('themeBtn').classList.add('on'); $('themeBtn').textContent='◑ Fondo claro'; }
+
+document.addEventListener('keydown',e=>{
+  if(document.activeElement===editor && e.key!=='Escape') return;
+  switch(e.key){
+    case ' ': e.preventDefault(); if(stage.style.display==='none') startPlay(); else toggle(); break;
+    case 'ArrowUp': e.preventDefault(); $('speed').value=Math.min(300,speed+10); speed=+$('speed').value; $('speedVal').textContent=speed; break;
+    case 'ArrowDown': e.preventDefault(); $('speed').value=Math.max(10,speed-10); speed=+$('speed').value; $('speedVal').textContent=speed; break;
+    case 'ArrowRight': { let s=Math.min(160,+$('size').value+4); $('size').value=s; applySize(s); break; }
+    case 'ArrowLeft': { let s=Math.max(20,+$('size').value-4); $('size').value=s; applySize(s); break; }
+    case 'r': case 'R': reset(); break;
+    case 'm': case 'M': mirror=(mirror+1)%4; applyMirror(); break;
+    case 'f': case 'F': if(!document.fullscreenElement) document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen(); else document.exitFullscreen(); break;
+    case 'Escape': edit(); break;
+  }
+});
+
+let hideT;
+document.addEventListener('mousemove',()=>{
+  bar.classList.remove('hidden'); help.classList.remove('hidden');
+  clearTimeout(hideT);
+  if(playing) hideT=setTimeout(()=>{ bar.classList.add('hidden'); help.classList.add('hidden'); },2500);
+});
+// En táctil: un toque en la zona de lectura muestra/oculta la barra
+stage.addEventListener('click',()=>{ bar.classList.toggle('hidden'); });
+
+applySize(54); applyMargin(8);
+stage.style.display='none';
+if(!editor.innerHTML) editor.focus();
+
+// PWA: registrar service worker para funcionar offline
+if('serviceWorker' in navigator){ window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{})); }
+</script>
+</body>
+</html>
