@@ -6,7 +6,7 @@ Un solo archivo HTML, cero dependencias, cero rastreo.
 Hecho en [Meridian Vision](https://meridianvision.cl) para nuestras propias grabaciones.
 Lo publicamos porque a cualquiera que grabe a cámara le sirve igual.
 
-**Úsalo ahora:** https://meridianvisiongroup-jpg.github.io/teleprompter/
+**Úsalo ahora:** https://meridianvision.github.io/teleprompter/
 
 ---
 
@@ -71,5 +71,5 @@ MIT. Úsalo, modifícalo, véndelo si quieres. Sin garantía de ningún tipo.
 ---
 
 <sub>Meridian Vision SpA · Santiago de Chile · parte del
-[Taller Abierto](https://github.com/meridianvisiongroup-jpg): las herramientas que
+[Taller Abierto](https://github.com/meridianvision): las herramientas que
 construimos para trabajar y publicamos gratis.</sub>
