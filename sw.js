@@ -1,7 +1,7 @@
 // Service worker — offline con actualización automática
 // HTML: network-first (siempre la última versión; offline usa copia).
 // Recursos estáticos: cache-first.
-const CACHE = 'teleprompter-v6';
+const CACHE = 'teleprompter-v7';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-180.png'];
 
 self.addEventListener('install', e => {
