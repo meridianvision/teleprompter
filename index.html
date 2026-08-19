@@ -96,6 +96,18 @@
     button{ flex:1 1 auto; }
     #help{ display:none; }
   }
+#hint{
+  margin:10px 3vw 0; padding:12px 14px; border-radius:8px;
+  background:#fff4d6; color:#4a3708; border:1px solid #e3c778;
+  font-size:15px; line-height:1.5; display:flex; flex-wrap:wrap;
+  gap:10px; align-items:center;
+}
+#hint button{
+  margin-left:auto; font-size:14px; padding:7px 14px; border-radius:6px;
+  border:1px solid #d8bd7a; background:#fff; cursor:pointer;
+}
+body.dark-read #hint{ background:#2a2205; color:#f3e2b0; border-color:#5c4a12; }
+body.dark-read #hint button{ background:#3a3008; color:#f3e2b0; border-color:#6b5716; }
 </style>
 </head>
 <body>
@@ -104,10 +116,10 @@
   <button id="playBtn" class="primary">▶ Iniciar</button>
   <button id="resetBtn">⟲ Reiniciar</button>
   <button id="editBtn">✎ Editar</button>
-  <button id="pasteBtn">📋 Pegar (WhatsApp/Word)</button>
-  <button id="fileBtn">📄 Abrir archivo</button>
+  <button id="pasteBtn">📋 Pegar</button>
+  <button id="fileBtn">📂 Buscar en el teléfono</button>
   <button id="clearBtn">🗑 Limpiar</button>
-  <input type="file" id="fileInput" accept=".txt,.docx,text/plain" hidden>
+  <input type="file" id="fileInput" hidden>
 
   <label>Velocidad <span class="val" id="speedVal">60</span> px/s
     <input type="range" id="speed" min="10" max="300" value="60" step="5">
@@ -129,7 +141,9 @@
 
 <div id="guide"></div>
 
-<div id="editor" contenteditable="true" data-ph="Escribe aquí, o usa 📋 Pegar (WhatsApp/Word) o 📄 Abrir archivo (.txt / .docx)…"></div>
+<div id="hint" hidden><strong>Mantén pulsado el área de abajo</strong> y elige <em>Pegar</em>. Tu teléfono no deja que la app lea el portapapeles sola.<button id="hintClose" type="button">Entendido</button></div>
+
+<div id="editor" contenteditable="true" data-ph="Escribe el guion aquí. O toca 📋 Pegar, o 📂 Buscar en el teléfono para abrir un .txt o un .docx."></div>
 
 <div id="stage"><div id="scroll"></div></div>
 
@@ -142,7 +156,10 @@ const editor=$('editor'), stage=$('stage'), scroll=$('scroll'),
 
 let playing=false, pos=0, raf=null, lastT=0;
 let speed=60, mirror=0;
-const LS='mv_teleprompter';
+const LS='mv_teleprompter_v2';
+// 19-ago-2026: se sube la versión de la clave para que los guiones guardados de
+// grabaciones anteriores no reaparezcan al abrir la app. Se borra la clave vieja.
+try{ localStorage.removeItem('mv_teleprompter_text'); }catch(e){}
 
 editor.innerHTML = localStorage.getItem(LS+'_text') || '';
 function save(){ localStorage.setItem(LS+'_text', editor.innerHTML); }
@@ -158,15 +175,28 @@ function textToHtml(txt){
 function setText(html){ edit(); editor.innerHTML = html || ''; save(); }
 
 // Botón Pegar: trae de un toque lo copiado en WhatsApp o Word
+function pegarAMano(){
+  edit();
+  $('hint').hidden = false;
+  editor.focus();
+  try{
+    const r = document.createRange();
+    r.selectNodeContents(editor); r.collapse(false);
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+  }catch(e){}
+}
+$('hintClose').onclick = () => { $('hint').hidden = true; };
+
 $('pasteBtn').onclick = async () => {
+  // En iPhone y en varios Android el navegador no permite leer el portapapeles
+  // desde la página. Cuando eso pasa no avisamos con un alert: abrimos el editor,
+  // dejamos el cursor puesto y explicamos cómo pegar a mano.
+  if(!navigator.clipboard || !navigator.clipboard.readText){ pegarAMano(); return; }
   try{
     const t = await navigator.clipboard.readText();
-    if(t && t.trim()) setText(textToHtml(t));
-    else alert('No hay texto en el portapapeles. Copia primero en WhatsApp o Word y vuelve a tocar “Pegar”.');
-  }catch(e){
-    edit();
-    alert('Tu navegador pidió permiso o no dejó leer el portapapeles.\nToca dentro del área de texto y mantén pulsado → Pegar.');
-  }
+    if(t && t.trim()){ $('hint').hidden = true; setText(textToHtml(t)); }
+    else pegarAMano();
+  }catch(e){ pegarAMano(); }
 };
 
 // Botón Limpiar
@@ -180,7 +210,7 @@ $('fileInput').onchange = async e => {
     const txt = /\.docx$/i.test(f.name) ? await readDocx(await f.arrayBuffer()) : await f.text();
     setText(textToHtml(txt));
   }catch(err){
-    alert('No pude leer el archivo. Si es Word, guárdalo como .docx (no .doc), o copia el texto y usa “Pegar”.');
+    alert('No pude leer «'+f.name+'».\n\nLee archivos .txt y .docx. Si es .doc antiguo o un PDF, abre el documento, copia el texto y usa 📋 Pegar.');
   }
   e.target.value='';
 };
