@@ -193,7 +193,13 @@ $('pasteBtn').onclick = async () => {
   // dejamos el cursor puesto y explicamos cómo pegar a mano.
   if(!navigator.clipboard || !navigator.clipboard.readText){ pegarAMano(); return; }
   try{
-    const t = await navigator.clipboard.readText();
+    // Ojo: en varios navegadores readText() se queda COLGADO esperando un permiso
+    // que nunca se responde, y el botón parecía no hacer nada. Le ponemos 1,2 s
+    // de plazo; si no contesta, pasamos derecho al pegado a mano.
+    const t = await Promise.race([
+      navigator.clipboard.readText(),
+      new Promise((_, rechazar) => setTimeout(() => rechazar(new Error('sin respuesta')), 1200))
+    ]);
     if(t && t.trim()){ $('hint').hidden = true; setText(textToHtml(t)); }
     else pegarAMano();
   }catch(e){ pegarAMano(); }
