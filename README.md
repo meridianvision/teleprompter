@@ -29,6 +29,13 @@ creadores, presentaciones grabadas.
    **Computador (Chrome/Edge):** el icono de instalar en la barra de direcciones.
 3. Ábrela una vez con internet. Desde ahí funciona offline para siempre.
 
+> **iPhone: tiene que ser Safari.** Chrome, Firefox y los navegadores que se abren
+> dentro de WhatsApp, Instagram o Gmail no pueden instalar aplicaciones web en iOS:
+> ahí la opción *Añadir a pantalla de inicio* no aparece, o crea un simple marcador.
+> Si el enlace te llegó por chat, ábrelo en Safari primero. Y si en Safari no ves la
+> opción, baja hasta el final de la lista de Compartir → *Editar acciones…* y actívala
+> (tampoco aparece en Navegación privada).
+
 ## Qué hace
 
 - **Pegar** el guion desde WhatsApp, Word o cualquier parte (entra siempre como
